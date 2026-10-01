@@ -29,17 +29,13 @@ die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 
 # ---- 0. Lay token ----
 TOKEN="${TUNNEL_TOKEN:-}"
+# Bo khoang trang/newline lot vao khi copy-paste
+TOKEN="$(printf '%s' "$TOKEN" | tr -d ' \t\n\r')"
 if [ -z "$TOKEN" ]; then
-  case "$TOKEN_ENC" in
-    ""|)
-      die "Chua co token. Chay lai voi TUNNEL_TOKEN='...' sh" ;;
-  esac
+  [ -n "$TOKEN_ENC" ] || die "Chua co token. Chay lai voi: ... | TUNNEL_TOKEN='eyJ...' sh"
   command -v openssl >/dev/null 2>&1 || die "Can openssl de giai ma token."
   PASS="${TUNNEL_PASS:-$PASS_EMBEDDED}"
-  case "$PASS" in
-    ""|)
-      die "Can passphrase: chay lai voi TUNNEL_PASS='...' sh" ;;
-  esac
+  [ -n "$PASS" ] || die "Can passphrase. Chay lai voi: ... | TUNNEL_PASS='matkhau' sh"
   TOKEN="$(printf '%s' "$TOKEN_ENC" | openssl enc -aes-256-cbc -pbkdf2 -a -A -d -pass "pass:$PASS" 2>/dev/null)" \
     || die "Giai ma that bai (sai passphrase?)."
   [ -n "$TOKEN" ] || die "Token rong sau khi giai ma."
