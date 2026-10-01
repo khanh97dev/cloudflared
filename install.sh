@@ -1,13 +1,14 @@
 #!/bin/sh
-# Cloudflare Tunnel - one-line installer (token ma hoa AES-256)
-#   curl -fsSL https://raw.githubusercontent.com/khanh97dev/cloudflared/main/install.sh | sh
+# Cloudflare Tunnel - one-line installer
 #
-# Token duoc ma hoa AES-256-CBC (openssl). Giai ma luc cai.
-# - Neu nhung ca passphrase ben duoi  -> chay thang, khong can nhap gi.
-# - Neu de passphrase ngoai (an toan hon):
-#     curl -fsSL .../install.sh | TUNNEL_PASS='matkhau' sh
-# - Hoac bo qua ma hoa, dung token raw:
-#     curl -fsSL .../install.sh | TUNNEL_TOKEN='eyJ...' sh
+# Lay token theo thu tu uu tien:
+#   1. Bien moi truong TUNNEL_TOKEN (token se vao shell history, script tu xoa):
+#        curl -fsSL .../install.sh | TUNNEL_TOKEN='eyJ...' sh
+#   2. Khong truyen gi -> script hoi truc tiep tu terminal (an toan nhat,
+#      token khong bao gio vao shell history):
+#        curl -fsSL .../install.sh | sh
+#   3. Giai ma TOKEN_ENC nhung san trong script (AES-256-CBC):
+#        curl -fsSL .../install.sh | TUNNEL_PASS='matkhau' sh
 
 set -eu
 
@@ -31,6 +32,17 @@ die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 TOKEN="${TUNNEL_TOKEN:-}"
 # Bo khoang trang/newline lot vao khi copy-paste
 TOKEN="$(printf '%s' "$TOKEN" | tr -d ' \t\n\r')"
+# Khong co token tren command line -> hoi truc tiep tu terminal.
+# Cach nay an toan nhat: token khong bao gio vao shell history.
+if [ -z "$TOKEN" ] && [ -z "$TOKEN_ENC" ] && [ -r /dev/tty ]; then
+  printf 'Nhap tunnel token (nhap xong Enter, khong hien thi): ' > /dev/tty
+  stty -echo < /dev/tty 2>/dev/null || true
+  read -r TOKEN < /dev/tty || true
+  stty echo < /dev/tty 2>/dev/null || true
+  printf '\n' > /dev/tty
+  TOKEN="$(printf '%s' "$TOKEN" | tr -d ' \t\n\r')"
+fi
+
 if [ -z "$TOKEN" ]; then
   [ -n "$TOKEN_ENC" ] || die "Chua co token. Chay lai voi: ... | TUNNEL_TOKEN='eyJ...' sh"
   command -v openssl >/dev/null 2>&1 || die "Can openssl de giai ma token."
@@ -79,6 +91,21 @@ umask 077
 printf '%s' "$TOKEN" > "$CFG_DIR/token"
 chmod 600 "$CFG_DIR/token"
 log "Da luu token: $CFG_DIR/token"
+
+# ---- 4b. Xoa token khoi shell history ----
+# Neu goi script bang `TUNNEL_TOKEN='eyJ...' sh` thi token da nam trong
+# history file. Xoa cac dong co chua token/passphrase.
+scrub_history() {
+  for f in /root/.bash_history /root/.zsh_history \
+           "${HOME:-/root}/.bash_history" "${HOME:-/root}/.zsh_history"; do
+    [ -f "$f" ] && [ -w "$f" ] || continue
+    grep -q -e 'TUNNEL_TOKEN' -e 'TUNNEL_PASS' -e 'eyJhIjoi' "$f" 2>/dev/null || continue
+    grep -v -e 'TUNNEL_TOKEN' -e 'TUNNEL_PASS' -e 'eyJhIjoi' "$f" > "$TMP/hist" 2>/dev/null || :
+    cat "$TMP/hist" > "$f"   # ghi de, giu nguyen inode + quyen
+    log "Da xoa dong chua token trong $f"
+  done
+}
+scrub_history
 
 # ---- 5. systemd service ----
 if ! command -v systemctl >/dev/null 2>&1; then
